@@ -62,7 +62,7 @@ private:
 };
 
 Ultrasonic UltLeft(3,2);
-Ultrasonic UltRight(6,5);
+//Ultrasonic UltRight(6,5);
 
 void setup() {
 	// put your setup code here, to run once:
