@@ -1,74 +1,17 @@
-class Ultrasonic{
-public:
-	Ultrasonic(int trigger, int echo){
-		pinMode(trigger, OUTPUT);
-  		digitalWrite(trigger, LOW);
-  		pinMode(echo, INPUT);
-  		_echo = echo;
-  		_trigger = trigger;
-	}
+//=====[ LIBRARIES ]========================================================================================
+#include "Ultrasonic.h"
 
-	float GetCms(){
-		return GetPulse()/ 58.0;
-	}
-
-private:
-    int _echo;
-    int _trigger;
-    unsigned long _t1;
-  	unsigned long _t2;
-  	unsigned long _pulse_width;
-  	const unsigned int MAX_DIST = 23200;
-  	enum timeoutFlag {notUsed, DataReady, SentSignal, TimeOutResponse, TimeOutWaitingSignal};
-  	timeoutFlag _flag;
-
-    unsigned long GetPulse(){
-		digitalWrite(_trigger, HIGH);
-		delayMicroseconds(10);
-		digitalWrite(_trigger, LOW);
-
-		_flag = notUsed;
-
-		_t1 = micros();
-		while ( digitalRead(_echo) == 0){
-			if (micros() - _t1 > 2000){
-				_flag = TimeOutResponse;
-				break;
-			}else{
-				_flag = SentSignal;
-			}
-		}
-    
-    	_t1 = micros();
-    	if (_flag == SentSignal){
-			while ( digitalRead(_echo) == 1){
-				if (micros() - _t1 > MAX_DIST){
-					_flag = TimeOutWaitingSignal;
-					break;
-				}else{
-					_flag = DataReady;
-				}
-			}
-			_t2 = micros();
-			_pulse_width = _t2 - _t1;
-		}
-
-		if ( _pulse_width < MAX_DIST  || _flag == DataReady) {
-			return _pulse_width;
-		}
-
-		return 0;
-  	}
-};
-
+//=====[ OBJECTS ]==========================================================================================
 Ultrasonic UltLeft(3,2);
 Ultrasonic UltRight(12,11);
 
-const int size = 10;		// For arrays
+//=====[ CONSTANTS ]========================================================================================
+const int size = 6;		// For arrays
 const int sizeBin = 10;		// For binary arrays
 const int thresholdBin = 3;
-const int threshold = 140; 	// In cms
+const int threshold = 70; 	// In cms
 
+//=====[ VARIABLES ]========================================================================================
 float leftArray[size];
 float rightArray[size];
 float leftBinArray[size];
@@ -77,18 +20,20 @@ float leftAverageArray[size];
 float rightAverageArray[size];
 int count = 0;
 int countBin = 0;
+enum MotionDetection{NoMotion, RightMotion, LeftMotion, ErrorMotion, OutOfRangeMotion};
+MotionDetection motion;
 
+int leftDetectObj = 0;
+int rightDetectObj = 0;
 
-
+//=====[ INIT ]=============================================================================================
 void setup() {
-	// put your setup code here, to run once:
 	Serial.begin(9600);
-	
 }
- 
+
+//=====[ MAIN LOOP ]======================================================================================== 
 void loop() {
-	// put your main code here, to run repeatedly:
-	
+
 	leftArray[count] = UltLeft.GetCms();
 	rightArray[count] = UltRight.GetCms();
 
@@ -98,36 +43,24 @@ void loop() {
 	CalculateBinArray(leftAverageArray, leftBinArray);
 	CalculateBinArray(rightAverageArray, rightBinArray);
 
+	leftDetectObj = DetectObject(leftBinArray);
+	rightDetectObj = DetectObject(rightBinArray);
 
-	Serial.print(millis());
-	Serial.print(",");
-
-	Serial.print(leftArray[count]);
-	Serial.print(",");
-	Serial.print(rightArray[count]);
-	Serial.print(",");
-
-	Serial.print(leftAverageArray[count]);
-	Serial.print(",");
-	Serial.print(rightAverageArray[count]);
-	Serial.print(",");
-
-	Serial.print(DetectObject(leftBinArray));
-	Serial.print(",");
-	Serial.print(DetectObject(rightBinArray));
+  	motion = DetectMotion(leftDetectObj, rightDetectObj);
+  
+	Serial.print(millis()); Serial.print(",");
+	Serial.print(leftArray[count]);	Serial.print(","); Serial.print(rightArray[count]); Serial.print(",");
+	Serial.print(leftAverageArray[count]); Serial.print(","); Serial.print(rightAverageArray[count]); Serial.print(",");
+	Serial.print(leftDetectObj); Serial.print(","); Serial.print(rightDetectObj);
+	Serial.print(","); Serial.print(motion);
 	Serial.println("");
 
-
+	count = (count == (size-1)) ? (0) : (count+1);
 	
-
-	count++;
-	if (count == size){
-		count = 0;
-	}
-   
-  	//delay(20);
+	//delay(50);
 }
 
+//=====[ FUNCTIONS ]========================================================================================
 float GetAverage(float data[]){
 	float average=0;
 
@@ -153,10 +86,63 @@ int DetectObject(float *binArray){
 	for (int i = 0; i < size; i++)
 		sum += binArray[i];
 
-	if (sum  > ((size/2)-1)){
+	if (sum  > ((size/2)-1))
 		return 1;
-	}
 
 	return 0;
+
+}
+
+
+int DetectMotion(int left, int right){
+	int event = 0;
+	MotionDetection detection;
+	static int prevEvent = 0;
+
+
+	event = (left) ? (event | 0x2) : (event);
+	event = (right) ? (event | 0x1) : (event);
+
+	event |= ((prevEvent << 2) & 0x06);
+
+	switch (event){
+		//No motion detected
+		case 0:
+		case 1:
+		case 2:
+		case 3:
+		case 5:	
+		case 10:
+			detection = NoMotion;
+			break;
+
+		// Right motion
+		case 4:
+		case 9: // Left-Right
+		case 11:
+		case 13:
+			detection = RightMotion;
+			break;
+
+		// Left motion
+		case 6: // Right-Left
+		case 7:
+		case 8:
+		case 14:
+			detection = LeftMotion;
+			break;
+
+		// Not possible
+		case 12: // Center-No
+		case 15: // Center-Center
+			detection = ErrorMotion;
+			break;
+		default:
+			detection = OutOfRangeMotion;
+	}
+
+  prevEvent = event & 0x03;
+
+  return detection;
 
 }
