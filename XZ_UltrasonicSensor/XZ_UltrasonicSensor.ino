@@ -6,7 +6,7 @@ Ultrasonic UltLeft(3,2);
 Ultrasonic UltRight(12,11);
 
 //=====[ CONSTANTS ]========================================================================================
-const int size = 6;		// For arrays
+const int size = 5;		// For arrays
 const int sizeBin = 10;		// For binary arrays
 const int thresholdBin = 3;
 const int threshold = 70; 	// In cms
@@ -35,6 +35,7 @@ void setup() {
 void loop() {
 
 	leftArray[count] = UltLeft.GetCms();
+  delay(5);
 	rightArray[count] = UltRight.GetCms();
 
 	leftAverageArray[count] = GetAverage(leftArray);
@@ -48,7 +49,7 @@ void loop() {
 
   	motion = DetectMotion(leftDetectObj, rightDetectObj);
   
-	Serial.print(millis()); Serial.print(",");
+	//Serial.print(millis()); Serial.print(",");
 	Serial.print(leftArray[count]);	Serial.print(","); Serial.print(rightArray[count]); Serial.print(",");
 	Serial.print(leftAverageArray[count]); Serial.print(","); Serial.print(rightAverageArray[count]); Serial.print(",");
 	Serial.print(leftDetectObj); Serial.print(","); Serial.print(rightDetectObj);
@@ -86,7 +87,7 @@ int DetectObject(float *binArray){
 	for (int i = 0; i < size; i++)
 		sum += binArray[i];
 
-	if (sum  > ((size/2)-1))
+	if (sum  > ((size/2)-1)) 
 		return 1;
 
 	return 0;
@@ -94,20 +95,23 @@ int DetectObject(float *binArray){
 }
 
 
-int DetectMotion(int left, int right){
+MotionDetection DetectMotion(int left, int right){
 	int event = 0;
-	MotionDetection detection;
+	static MotionDetection detection;
 	static int prevEvent = 0;
+	static int motionFlag = 0;
 
-
-	event = (left) ? (event | 0x2) : (event);
+	event = (left) ? (event | 0x2) : (0);
 	event = (right) ? (event | 0x1) : (event);
 
-	event |= ((prevEvent << 2) & 0x06);
+	event |= (prevEvent << 2);
+
+	prevEvent = (event & 0x03);
 
 	switch (event){
 		//No motion detected
 		case 0:
+			motionFlag = 0;
 		case 1:
 		case 2:
 		case 3:
@@ -115,33 +119,35 @@ int DetectMotion(int left, int right){
 		case 10:
 			detection = NoMotion;
 			break;
-
 		// Right motion
 		case 4:
 		case 9: // Left-Right
 		case 11:
 		case 13:
-			detection = RightMotion;
+			if (motionFlag == 0){
+				motionFlag = 1;
+				detection = RightMotion;	
+			}
 			break;
-
 		// Left motion
 		case 6: // Right-Left
 		case 7:
 		case 8:
-		case 14:
-			detection = LeftMotion;
+		case 14:	
+			if (motionFlag == 0){
+				motionFlag = 1;
+				detection = LeftMotion;
+			}
 			break;
-
 		// Not possible
 		case 12: // Center-No
 		case 15: // Center-Center
-			detection = ErrorMotion;
+			if (motionFlag == 0){
+				motionFlag = 1;
+				detection = ErrorMotion;
+			}
 			break;
-		default:
-			detection = OutOfRangeMotion;
 	}
-
-  prevEvent = event & 0x03;
 
   return detection;
 
